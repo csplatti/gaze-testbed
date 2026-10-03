@@ -83,10 +83,10 @@ export function updateSmoothedPoint(point) {
 }
 
 export function updateHighlight(target, locked = false) {
-  updateHighlights(target ? [target] : [], locked ? target : null)
+  updateHighlights(target ? [target] : [], locked ? target : null, target)
 }
 
-export function updateHighlights(targets = [], lockedTarget = null) {
+export function updateHighlights(targets = [], lockedTarget = null, primaryTarget = null) {
   const { outline } = ensureOverlay()
   outline.style.display = 'none'
   const visibleElements = new Set(targets.map((target) => target.element))
@@ -108,7 +108,9 @@ export function updateHighlights(targets = [], lockedTarget = null) {
     }
 
     const rect = target.element.getBoundingClientRect()
-    const isPrimary = index === 0
+    const isPrimary = primaryTarget
+      ? primaryTarget.element === target.element
+      : index === 0
     const isLocked = lockedTarget?.element === target.element
     Object.assign(candidateOutline.style, {
       position: 'fixed',

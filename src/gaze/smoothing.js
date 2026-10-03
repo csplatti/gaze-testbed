@@ -4,6 +4,10 @@ export function createEmaSmoother(alpha = 0.12, maxInputJump = 260) {
 
   return {
     update(nextPoint) {
+      if (!nextPoint || !Number.isFinite(nextPoint.x) || !Number.isFinite(nextPoint.y)) {
+        return point ? { ...point } : null
+      }
+
       if (!point) {
         point = { x: nextPoint.x, y: nextPoint.y }
       } else {

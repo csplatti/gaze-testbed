@@ -1,5 +1,23 @@
 const IGNORED_COMPONENTS = new Set(['GhostLayer'])
 const INTERACTIVE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA'])
+const MEANINGFUL_BLOCK_TAGS = new Set([
+  'ARTICLE',
+  'ASIDE',
+  'FOOTER',
+  'H1',
+  'H2',
+  'H3',
+  'H4',
+  'H5',
+  'H6',
+  'HEADER',
+  'MAIN',
+  'NAV',
+  'P',
+  'SECTION',
+  'SVG',
+])
+const AREA_RADIUS = 320
 
 function isVisible(element) {
   if (!(element instanceof Element)) return false
@@ -17,10 +35,25 @@ function isIgnored(element) {
     IGNORED_COMPONENTS.has(element.closest?.('[data-component]')?.dataset.component)
 }
 
+function isMeaningfulElement(element, rect = element.getBoundingClientRect()) {
+  // Components are intentionally explicit: semantic blocks and controls are
+  // meaningful by default, compact data-component roots remain useful for
+  // dense controls, and future fixtures can opt in with data-gaze-target.
+  const interactive = INTERACTIVE_TAGS.has(element.tagName) || element.getAttribute('role')
+  const semanticBlock = MEANINGFUL_BLOCK_TAGS.has(element.tagName)
+  const intentionallySmall = rect.width <= 320 && rect.height <= 180
+  const explicitTarget = element.dataset.gazeTarget === 'true'
+  return Boolean(interactive || semanticBlock || intentionallySmall || explicitTarget)
+}
+
 function componentRoot(element) {
   let current = element
   while (current && current !== document.documentElement) {
-    if (current.dataset?.component && !IGNORED_COMPONENTS.has(current.dataset.component)) {
+    if (
+      current.dataset?.component &&
+      !IGNORED_COMPONENTS.has(current.dataset.component) &&
+      isMeaningfulElement(current)
+    ) {
       return current
     }
     current = current.parentElement
@@ -103,21 +136,37 @@ export function probeArea(x, y) {
     .filter((element) => isVisible(element) && !isIgnored(element))
     .map((element, order) => {
       const rect = element.getBoundingClientRect()
-      if (!isMeaningfulAreaTarget(element, rect)) return null
+      if (!isMeaningfulElement(element, rect)) return null
 
       return { element, order, distance: distanceToRect(x, y, rect) }
     })
     .filter(Boolean)
-    .sort((a, b) => a.distance - b.distance || a.order - b.order)
+    .filter(({ distance }) => distance <= AREA_RADIUS)
 
-  // Keep the candidate set deterministic and explicit: the five nearest
-  // meaningful component roots to the smoothed gaze point.
-  const selected = candidates.slice(0, 5).map(({ element, distance }) => ({
+  const ranked = [...candidates].sort((a, b) => a.distance - b.distance || a.order - b.order)
+
+  // Select by proximity, then restore document order for the serialized
+  // candidate list. This keeps the list stable across repeated frames while
+  // still using distance to choose the primary candidate.
+  const selectedElements = ranked.slice(0, 5)
+  if (exact && !selectedElements.some(({ element }) => element === exact.element)) {
+    selectedElements.pop()
+    selectedElements.push({
+      element: exact.element,
+      order: candidates.find(({ element }) => element === exact.element)?.order ?? Number.MAX_SAFE_INTEGER,
+      distance: distanceToRect(x, y, exact.element.getBoundingClientRect()),
+    })
+  }
+
+  const selected = selectedElements
+    .sort((a, b) => a.order - b.order)
+    .map(({ element, distance }) => ({
     ...targetFromElement(element),
     distance,
-  }))
+    }))
 
-  const primary = exact || selected[0] || nearbyInteractiveTarget(x, y)
+  const nearest = ranked[0] ? targetFromElement(ranked[0].element) : null
+  const primary = exact || nearest || nearbyInteractiveTarget(x, y)
   if (primary && !selected.some((candidate) => candidate.element === primary.element)) {
     selected.unshift(primary)
   }

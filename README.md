@@ -2,9 +2,15 @@
 
 Dummy React app for testing the gaze + voice dev tool. No backend.
 
+The current verification record is in
+[`DEV-A-TESTBED-REPORT.md`](./DEV-A-TESTBED-REPORT.md). The reusable tracker
+boundary lives in `src/gaze/`; it can wrap this demo page now and a future
+webpage viewer later.
+
 ```
 npm install
 npm run dev     # http://localhost:5173
+npm test         # deterministic probe, frame, and smoothing fixtures
 ```
 
 Every component root has `data-component="Name"` (stand-in for the future DOM-to-source mapping).

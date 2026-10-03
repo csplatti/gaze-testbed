@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import Calibration from './Calibration.jsx'
 import { startWebGazer, stopWebGazer } from './webgazer.js'
 import { createEmaSmoother } from './smoothing.js'
+import { createDwellTracker } from './dwell.js'
 import { probeArea } from './probe.js'
 import { createGazeFrame } from './frame.js'
 import {
@@ -18,13 +19,12 @@ export default function GazeTrackingLayer({ children }) {
 
   useEffect(() => {
     let mounted = true
-    let currentTarget = null
-    let enteredAt = 0
     let samplesSeen = 0
     let predictionsSeen = 0
     const headMotionThreshold = 8
     const dwellMs = 500
     const smoother = createEmaSmoother(0.12)
+    const dwell = createDwellTracker(dwellMs)
 
     ensureOverlay()
     updateStatus({ source: 'starting camera', target: null, locked: false })
@@ -32,7 +32,7 @@ export default function GazeTrackingLayer({ children }) {
     const lock = (target, source, candidates = [target]) => {
       if (!target) return
       lockedTarget.current = target
-      updateHighlights(candidates, target)
+      updateHighlights(candidates, target, target)
       updateStatus({ source, target, candidates, locked: true })
       console.debug('[Gaze Testbed] target locked', {
         componentName: target.componentName,
@@ -58,18 +58,17 @@ export default function GazeTrackingLayer({ children }) {
 
       const area = probeArea(smoothed.x, smoothed.y)
       const target = area.primary
-      if (target?.element !== currentTarget?.element) {
-        currentTarget = target
-        enteredAt = performance.now()
+      const dwellState = dwell.update(target, performance.now())
+      if (dwellState.changed) {
         lockedTarget.current = null
       }
 
       const isLocked = lockedTarget.current?.element === target?.element
-      updateHighlights(area.candidates, isLocked ? lockedTarget.current : null)
+      updateHighlights(area.candidates, isLocked ? lockedTarget.current : null, target)
       updateStatus({ source, target, candidates: area.candidates, locked: isLocked })
 
-      if (target && performance.now() - enteredAt >= dwellMs) {
-        lock(target, 'dwell', area.candidates)
+      if (dwellState.lockedTarget && !isLocked) {
+        lock(dwellState.lockedTarget, 'dwell', area.candidates)
       }
 
       emitFrame(area.candidates)
@@ -83,8 +82,7 @@ export default function GazeTrackingLayer({ children }) {
       const area = probeArea(event.clientX, event.clientY)
       const target = area.primary
       if (target) {
-        currentTarget = target
-        lock(target, 'click', area.candidates)
+        lock(dwell.click(target), 'click', area.candidates)
       }
       emitFrame(area.candidates)
     }
