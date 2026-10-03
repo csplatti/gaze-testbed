@@ -143,7 +143,8 @@ The probe should:
 4. Find the nearest meaningful ancestor with `data-component`.
 5. Rank meaningful component roots by distance from the gaze point.
 6. Return the five nearest candidates and their bounding rectangles, with the
-   exact hit or nearest candidate as primary.
+   exact hit or nearest candidate as primary. The query may accept an adaptive
+   `radiusPx`; use `radiusPx: 0` for click overrides.
 
 The testbed already has many useful attributes, for example:
 
@@ -161,6 +162,10 @@ uncertainty visible instead of implying pixel-level accuracy.
 
 The outline should be for debugging only. It will eventually be replaced by
 the PM/UI-owned gaze overlay.
+
+The adaptive-orb prototype also exposes an optional `onGazeFrame` seam. The
+sandbox renders a soft orb for debugging, while the production PM layer should
+own that rendering and use the frame's `gaze` values.
 
 ### 9. Test with the mouse first
 
@@ -181,10 +186,13 @@ This separates DOM-probing bugs from eye-tracking bugs.
 Keep the most recent 5–10 points and average them, or use an exponential
 moving average. Compare the raw debug dot with the smoothed point.
 
-Start with a smoothing factor around `0.12` for this sandbox and tune it
-against visible jitter and target lag. WebGazer also applies its own internal
-filter, so avoid stacking so much smoothing that the point trails the user's
-gaze.
+Use the sensitivity-controlled `smoothing` value, defaulting to `0.25` in the
+adaptive-orb prototype, and tune it against visible jitter and target lag.
+WebGazer's Kalman filter remains disabled here so the rAF loop owns the EMA.
+The same sensitivity setting controls the adaptive radius (90–160 px by
+default) so smoothing and spatial forgiveness remain one user-facing knob.
+The same sensitivity object may also provide `dwellMs` (default `500`) so the
+lock threshold can be tuned without changing the tracking wrapper.
 
 ### 11. Add snapping
 
@@ -233,9 +241,21 @@ main repository contract:
     supportedOps: []
   }],
   lockedTarget: null,
+  gaze: {
+    x: 0,
+    y: 0,
+    smoothedX: 0,
+    smoothedY: 0,
+    radiusPx: 90,
+    trackedConfidence: 0.5
+  },
   capturedAt: Date.now()
 }
 ```
+
+Candidates may additionally carry JSON-safe `orbOverlap` and
+`centerDistancePx` values. Select spatially, then restore document order before
+serializing the bounded list.
 
 For this temporary experiment, `filePath` may be `null` and `supportedOps`
 may be an empty array. Source mapping and edit catalogs come later.

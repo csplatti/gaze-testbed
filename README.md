@@ -7,6 +7,21 @@ The current verification record is in
 boundary lives in `src/gaze/`; it can wrap this demo page now and a future
 webpage viewer later.
 
+The wrapper accepts the future renderer seam without coupling the page to
+WebGazer:
+
+```jsx
+<GazeTrackingLayer
+  sensitivity={{ dwellMs: 500, smoothing: 0.25, minRadiusPx: 90, maxRadiusPx: 160 }}
+  onGazeFrame={(frame) => pmOverlay.render(frame.gaze)}
+>
+  <WebpageViewer />
+</GazeTrackingLayer>
+```
+
+The callback is local renderer data; candidate frames remain bounded at five
+items and radius-zero queries are reserved for click overrides.
+
 ```
 npm install
 npm run dev     # http://localhost:5173

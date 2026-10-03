@@ -14,16 +14,28 @@ function makeLayer() {
 
   const rawDot = document.createElement('div')
   const smoothedDot = document.createElement('div')
+  const orb = document.createElement('div')
   const outline = document.createElement('div')
   const status = document.createElement('div')
 
   rawDot.dataset.gazeRawDot = 'true'
   smoothedDot.dataset.gazeSmoothedDot = 'true'
+  orb.dataset.gazeOrb = 'true'
   outline.dataset.gazeOutline = 'true'
   status.dataset.gazeStatus = 'true'
 
   Object.assign(rawDot.style, dotStyle('#f8bd46', 8))
   Object.assign(smoothedDot.style, dotStyle('#5ae0e7', 12))
+  Object.assign(orb.style, {
+    position: 'fixed',
+    transform: 'translate(-50%, -50%)',
+    borderRadius: '50%',
+    background: 'radial-gradient(circle, rgba(90, 224, 231, .55) 0%, rgba(90, 224, 231, .18) 38%, rgba(90, 224, 231, 0) 72%)',
+    border: '1px solid rgba(90, 224, 231, .5)',
+    boxShadow: '0 0 20px rgba(90, 224, 231, .2)',
+    pointerEvents: 'none',
+    display: 'none',
+  })
   Object.assign(outline.style, {
     position: 'fixed',
     border: '2px solid #5ae0e7',
@@ -44,9 +56,9 @@ function makeLayer() {
     font: '12px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace',
   })
 
-  layer.append(rawDot, smoothedDot, outline, status)
+  layer.append(orb, rawDot, smoothedDot, outline, status)
   document.body.append(layer)
-  return { layer, rawDot, smoothedDot, outline, status }
+  return { layer, rawDot, smoothedDot, orb, outline, status }
 }
 
 function dotStyle(color, size) {
@@ -80,6 +92,19 @@ export function updateRawPoint(point) {
 export function updateSmoothedPoint(point) {
   const { smoothedDot } = ensureOverlay()
   Object.assign(smoothedDot.style, { left: `${point.x}px`, top: `${point.y}px`, display: 'block' })
+}
+
+export function updateGazeOrb({ point, radiusPx, opacity = 0.6 }) {
+  const { orb } = ensureOverlay()
+  const diameter = Math.max(0, radiusPx * 2)
+  Object.assign(orb.style, {
+    left: `${point.x}px`,
+    top: `${point.y}px`,
+    width: `${diameter}px`,
+    height: `${diameter}px`,
+    opacity: `${opacity}`,
+    display: 'block',
+  })
 }
 
 export function updateHighlight(target, locked = false) {

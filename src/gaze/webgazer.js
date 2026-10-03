@@ -2,6 +2,16 @@ import webgazer from 'webgazer'
 
 let previousFaceAnchor = null
 
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+function readTrackedConfidence(data, headMotion) {
+  if (Number.isFinite(data?.confidence)) return clamp(data.confidence, 0, 1)
+  if (headMotion === null) return 0.5
+  return clamp(1 - headMotion / 24, 0, 1)
+}
+
 function readHeadMotion() {
   const positions = webgazer.getTracker?.().getPositions?.()
   const anchor = positions?.[1]
@@ -47,12 +57,13 @@ export function startWebGazer(onGaze, onSample) {
     .showPredictionPoints(false)
     .setGazeListener((data, elapsedTime) => {
       const headMotion = readHeadMotion()
-      onSample?.(data, elapsedTime, { headMotion })
+      const trackedConfidence = readTrackedConfidence(data, headMotion)
+      onSample?.(data, elapsedTime, { headMotion, trackedConfidence })
       if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return
 
       const prediction = { x: data.x, y: data.y }
       console.log('[WebGazer] gaze prediction', { ...prediction, elapsedTime })
-      onGaze?.(prediction, elapsedTime, { headMotion })
+      onGaze?.(prediction, elapsedTime, { headMotion, trackedConfidence })
     })
 
   return webgazer.begin()

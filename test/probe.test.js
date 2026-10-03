@@ -49,6 +49,23 @@ test('prioritizes modal content over the scrim and page content', () => {
   dom.restore()
 })
 
+test('supports exact radius-zero queries and exposes spatial candidate metadata', () => {
+  const first = new FakeElement('button', { component: 'First', rect: rect(0, 0, 40, 40) })
+  const second = new FakeElement('button', { component: 'Second', rect: rect(70, 0, 40, 40) })
+  const dom = installFakeDom([first, second])
+
+  dom.document.setHitStack([])
+  const exactMiss = probeArea(55, 20, 0)
+  assert.equal(exactMiss.primary, null)
+  assert.deepEqual(exactMiss.candidates, [])
+
+  const area = probeArea(55, 20, 30)
+  assert.ok(area.candidates.length > 0)
+  assert.ok(area.candidates.every((candidate) => candidate.orbOverlap >= 0 && candidate.orbOverlap <= 1))
+  assert.ok(area.candidates.every((candidate) => Number.isFinite(candidate.centerDistancePx)))
+  dom.restore()
+})
+
 test('ignores gaze overlays and the transparent GhostLayer', () => {
   const card = new FakeElement('article', { component: 'Card-dark', rect: rect(0, 0, 300, 220) })
   const ghost = new FakeElement('div', { component: 'GhostLayer', rect: rect(0, 0, 300, 220) })

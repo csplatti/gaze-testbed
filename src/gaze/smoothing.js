@@ -1,5 +1,5 @@
 export function createEmaSmoother(alpha = 0.12, maxInputJump = 260) {
-  const factor = Math.min(1, Math.max(0, alpha))
+  let factor = Math.min(1, Math.max(0, alpha))
   let point = null
 
   return {
@@ -27,6 +27,9 @@ export function createEmaSmoother(alpha = 0.12, maxInputJump = 260) {
     },
     reset() {
       point = null
+    },
+    setAlpha(nextAlpha) {
+      factor = Math.min(1, Math.max(0, nextAlpha))
     },
   }
 }

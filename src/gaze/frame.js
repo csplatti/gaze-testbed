@@ -18,7 +18,7 @@ function debugSelector(candidate, element) {
   return tagName
 }
 
-function serializeCandidate(candidate, index) {
+function serializeCandidate(candidate, index, trackedConfidence = 0.5) {
   const safeCandidate = candidate ?? {}
   const element = safeCandidate.element
   const outerHTML = typeof element?.outerHTML === 'string' ? element.outerHTML : ''
@@ -32,7 +32,7 @@ function serializeCandidate(candidate, index) {
       }
     : { x: 0, y: 0, width: 0, height: 0 }
 
-  return {
+  const serialized = {
     id: `c${index}`,
     selector: debugSelector(safeCandidate, element),
     componentName: safeCandidate.componentName ?? null,
@@ -40,13 +40,37 @@ function serializeCandidate(candidate, index) {
     boundingRect: rect,
     outerHTMLSnippet: outerHTML.slice(0, HTML_SNIPPET_LIMIT),
     htmlTruncated: outerHTML.length > HTML_SNIPPET_LIMIT,
-    confidence: 0.5,
-    trackedConfidence: 0.5,
+    confidence: finiteNumber(safeCandidate.confidence, trackedConfidence),
+    trackedConfidence: finiteNumber(safeCandidate.trackedConfidence, trackedConfidence),
     supportedOps: [],
+  }
+
+  if (Number.isFinite(safeCandidate.orbOverlap)) serialized.orbOverlap = safeCandidate.orbOverlap
+  if (Number.isFinite(safeCandidate.centerDistancePx)) {
+    serialized.centerDistancePx = safeCandidate.centerDistancePx
+  }
+
+  return serialized
+}
+
+function serializeGaze(gaze, trackedConfidence) {
+  if (!gaze) return null
+  return {
+    x: finiteNumber(gaze.x),
+    y: finiteNumber(gaze.y),
+    smoothedX: finiteNumber(gaze.smoothedX),
+    smoothedY: finiteNumber(gaze.smoothedY),
+    radiusPx: finiteNumber(gaze.radiusPx),
+    trackedConfidence: finiteNumber(gaze.trackedConfidence, trackedConfidence),
   }
 }
 
-export function createGazeFrame({ candidates = [], lockedTarget = null } = {}) {
+export function createGazeFrame({
+  candidates = [],
+  lockedTarget = null,
+  gaze = null,
+  trackedConfidence = 0.5,
+} = {}) {
   const uniqueCandidates = []
   const seenElements = new Set()
   for (const candidate of candidates) {
@@ -55,7 +79,9 @@ export function createGazeFrame({ candidates = [], lockedTarget = null } = {}) {
     uniqueCandidates.push(candidate)
   }
 
-  const serializedCandidates = uniqueCandidates.map(serializeCandidate)
+  const serializedCandidates = uniqueCandidates.map((candidate, index) =>
+    serializeCandidate(candidate, index, trackedConfidence),
+  )
   const lockedIndex = lockedTarget
     ? uniqueCandidates.findIndex((candidate) => candidate.element === lockedTarget.element)
     : -1
@@ -63,6 +89,7 @@ export function createGazeFrame({ candidates = [], lockedTarget = null } = {}) {
   return {
     candidates: serializedCandidates,
     lockedTarget: lockedIndex >= 0 ? serializedCandidates[lockedIndex] : null,
+    gaze: serializeGaze(gaze, trackedConfidence),
     capturedAt: Date.now(),
   }
 }

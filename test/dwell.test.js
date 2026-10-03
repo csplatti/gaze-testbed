@@ -25,3 +25,12 @@ test('click locks immediately and reset clears the lock', () => {
   tracker.reset()
   assert.equal(tracker.update(clicked, 0).lockedTarget, null)
 })
+
+test('updates the dwell threshold from sensitivity without losing the current target', () => {
+  const tracker = createDwellTracker(500)
+  const first = target('first')
+
+  tracker.update(first, 0)
+  tracker.setThreshold(300)
+  assert.equal(tracker.update(first, 300).lockedTarget, first)
+})

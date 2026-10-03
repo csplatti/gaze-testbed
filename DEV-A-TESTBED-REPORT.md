@@ -44,6 +44,32 @@ The scripted DOM probe produced 12/12 intended primary candidates and stable
 candidate lists on repeated probes. This is a DOM-probe result, not a claim
 that webcam gaze is 100% accurate.
 
+## Adaptive gaze-orb prototype
+
+The follow-up design is represented in the testbed without changing the
+production `mhacks` contracts:
+
+- `GazeTrackingLayer` samples the latest WebGazer point on `requestAnimationFrame`
+  and applies the sensitivity-controlled EMA (`smoothing: 0.25` by default).
+- `GazeFrame.gaze` contains viewport-local `x`, `y`, `smoothedX`, `smoothedY`,
+  `radiusPx`, and `trackedConfidence` values. An optional `onGazeFrame`
+  callback is the future PM seam; the debug orb is only a sandbox
+  visualization.
+- The wrapper accepts the contract-shaped sensitivity settings `{ dwellMs,
+  smoothing }` and updates both live; the testbed also accepts the orb radius
+  bounds as local renderer configuration.
+- The orb radius adapts from 90 px at high tracked confidence to 160 px at low
+  confidence. Its opacity also reflects tracked confidence.
+- Area queries accept an optional radius. Radius-zero queries are exact click
+  overrides; normal queries rank intersecting meaningful components by orb
+  overlap, center distance, element area, and document order, then serialize
+  the selected candidates in document order.
+- Candidates may include JSON-safe `orbOverlap` and `centerDistancePx` values.
+
+The renderer loop is intentionally separate from the query/decision path. A
+future PM integration can consume the frame stream locally while Dev B receives
+only the bounded candidate set and lock events needed for decisions.
+
 ## Manual webcam observations
 
 The live Chrome run confirmed that the face mesh, calibration overlay, raw and

@@ -1,4 +1,5 @@
 export function createDwellTracker(thresholdMs = 500) {
+  let threshold = thresholdMs
   let currentElement = null
   let enteredAt = null
   let lockedTarget = null
@@ -11,7 +12,7 @@ export function createDwellTracker(thresholdMs = 500) {
       lockedTarget = null
     }
 
-    if (target && enteredAt !== null && now - enteredAt >= thresholdMs) {
+    if (target && enteredAt !== null && now - enteredAt >= threshold) {
       lockedTarget = target
     }
 
@@ -31,5 +32,9 @@ export function createDwellTracker(thresholdMs = 500) {
     lockedTarget = null
   }
 
-  return { update, click, reset }
+  function setThreshold(nextThreshold) {
+    if (Number.isFinite(nextThreshold)) threshold = Math.max(0, nextThreshold)
+  }
+
+  return { update, click, reset, setThreshold }
 }

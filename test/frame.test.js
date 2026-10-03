@@ -15,10 +15,12 @@ test('creates a deterministic, JSON-safe frame and round-trips it', () => {
 
   const frame = createGazeFrame({
     candidates: [
-      { ...buttonTarget(button), selector: '' },
+      { ...buttonTarget(button), selector: '', orbOverlap: 0.75, centerDistancePx: 24 },
       { ...buttonTarget(button), selector: '' },
     ],
     lockedTarget: buttonTarget(button),
+    gaze: { x: 100, y: 120, smoothedX: 102, smoothedY: 118, radiusPx: 90 },
+    trackedConfidence: 0.8,
   })
 
   assert.equal(frame.candidates.length, 1)
@@ -26,6 +28,17 @@ test('creates a deterministic, JSON-safe frame and round-trips it', () => {
   assert.equal(typeof frame.candidates[0].selector, 'string')
   assert.equal(frame.candidates[0].outerHTMLSnippet.length, 2048)
   assert.equal(frame.candidates[0].htmlTruncated, true)
+  assert.equal(frame.candidates[0].orbOverlap, 0.75)
+  assert.equal(frame.candidates[0].centerDistancePx, 24)
+  assert.deepEqual(frame.gaze, {
+    x: 100,
+    y: 120,
+    smoothedX: 102,
+    smoothedY: 118,
+    radiusPx: 90,
+    trackedConfidence: 0.8,
+  })
+  assert.equal(frame.candidates[0].trackedConfidence, 0.8)
   assert.deepEqual(frame.candidates[0].boundingRect, { x: 10, y: 20, width: 100, height: 40 })
   assert.equal(frame.lockedTarget.id, 'c0')
   assert.deepEqual(JSON.parse(JSON.stringify(frame)), frame)

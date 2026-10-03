@@ -6,25 +6,46 @@ import { createDwellTracker } from './dwell.js'
 import { probeArea } from './probe.js'
 import { createGazeFrame } from './frame.js'
 import {
+  DEFAULT_SENSITIVITY,
+  normalizeSensitivity,
+  opacityForConfidence,
+  radiusForConfidence,
+} from './sensitivity.js'
+import {
   ensureOverlay,
   removeOverlay,
+  updateGazeOrb,
   updateHighlights,
   updateRawPoint,
   updateSmoothedPoint,
   updateStatus,
 } from './overlay.js'
 
-export default function GazeTrackingLayer({ children }) {
+export default function GazeTrackingLayer({
+  children,
+  sensitivity = DEFAULT_SENSITIVITY,
+  listening = false,
+  onGazeFrame,
+}) {
   const lockedTarget = useRef(null)
+  const sensitivityRef = useRef(sensitivity)
+  const listeningRef = useRef(listening)
+  const frameCallbackRef = useRef(onGazeFrame)
+
+  sensitivityRef.current = sensitivity
+  listeningRef.current = listening
+  frameCallbackRef.current = onGazeFrame
 
   useEffect(() => {
     let mounted = true
     let samplesSeen = 0
     let predictionsSeen = 0
+    let latestSample = null
+    let animationFrame = null
     const headMotionThreshold = 8
-    const dwellMs = 500
-    const smoother = createEmaSmoother(0.12)
-    const dwell = createDwellTracker(dwellMs)
+    const initialSensitivity = normalizeSensitivity(sensitivityRef.current)
+    const smoother = createEmaSmoother(initialSensitivity.smoothing)
+    const dwell = createDwellTracker(initialSensitivity.dwellMs)
 
     ensureOverlay()
     updateStatus({ source: 'starting camera', target: null, locked: false })
@@ -40,63 +61,108 @@ export default function GazeTrackingLayer({ children }) {
       })
     }
 
-    const emitFrame = (candidates) => {
+    const emitFrame = (candidates, gaze, trackedConfidence) => {
       const frame = createGazeFrame({
         candidates,
         lockedTarget: lockedTarget.current,
+        gaze,
+        trackedConfidence,
       })
       console.log('[Gaze Testbed] GazeFrame', JSON.stringify(frame))
+      frameCallbackRef.current?.(frame)
       return frame
     }
 
-    const handlePoint = (point, source) => {
-      if (!mounted) return
+    const processSample = (sample) => {
+      if (!mounted || !sample || listeningRef.current) return
 
-      updateRawPoint(point)
-      const smoothed = smoother.update(point)
+      if (sample.headMotion > headMotionThreshold) {
+        updateStatus({ source: 'head movement detected · hold still', target: null, locked: false })
+        return
+      }
+
+      const currentSensitivity = normalizeSensitivity(sensitivityRef.current)
+      smoother.setAlpha(currentSensitivity.smoothing)
+      dwell.setThreshold(currentSensitivity.dwellMs)
+      const smoothed = smoother.update(sample.point)
+      if (!smoothed) return
+
+      const trackedConfidence = Number.isFinite(sample.trackedConfidence)
+        ? sample.trackedConfidence
+        : 0.5
+      const radiusPx = radiusForConfidence(trackedConfidence, currentSensitivity)
+
+      updateRawPoint(sample.point)
       updateSmoothedPoint(smoothed)
+      updateGazeOrb({
+        point: smoothed,
+        radiusPx,
+        opacity: opacityForConfidence(trackedConfidence),
+      })
 
-      const area = probeArea(smoothed.x, smoothed.y)
+      const area = probeArea(smoothed.x, smoothed.y, radiusPx)
       const target = area.primary
       const dwellState = dwell.update(target, performance.now())
-      if (dwellState.changed) {
-        lockedTarget.current = null
-      }
+      if (dwellState.changed) lockedTarget.current = null
 
       const isLocked = lockedTarget.current?.element === target?.element
       updateHighlights(area.candidates, isLocked ? lockedTarget.current : null, target)
-      updateStatus({ source, target, candidates: area.candidates, locked: isLocked })
+      updateStatus({ source: sample.source, target, candidates: area.candidates, locked: isLocked })
 
       if (dwellState.lockedTarget && !isLocked) {
         lock(dwellState.lockedTarget, 'dwell', area.candidates)
       }
 
-      emitFrame(area.candidates)
+      emitFrame(area.candidates, {
+        x: sample.point.x,
+        y: sample.point.y,
+        smoothedX: smoothed.x,
+        smoothedY: smoothed.y,
+        radiusPx,
+      }, trackedConfidence)
     }
 
     const handleMouseMove = (event) => {
-      handlePoint({ x: event.clientX, y: event.clientY }, 'mouse')
+      latestSample = {
+        point: { x: event.clientX, y: event.clientY },
+        source: 'mouse',
+        headMotion: null,
+        trackedConfidence: 1,
+      }
     }
 
     const handleClick = (event) => {
-      const area = probeArea(event.clientX, event.clientY)
+      const area = probeArea(event.clientX, event.clientY, 0)
       const target = area.primary
-      if (target) {
-        lock(dwell.click(target), 'click', area.candidates)
-      }
-      emitFrame(area.candidates)
+      if (target) lock(dwell.click(target), 'click', area.candidates)
+
+      emitFrame(area.candidates, {
+        x: event.clientX,
+        y: event.clientY,
+        smoothedX: event.clientX,
+        smoothedY: event.clientY,
+        radiusPx: 0,
+      }, 1)
+    }
+
+    const renderLatestSample = () => {
+      if (!mounted) return
+      processSample(latestSample)
+      animationFrame = window.requestAnimationFrame(renderLatestSample)
     }
 
     window.addEventListener('mousemove', handleMouseMove)
     window.addEventListener('click', handleClick, true)
+    animationFrame = window.requestAnimationFrame(renderLatestSample)
 
     startWebGazer(
       (prediction, _elapsedTime, diagnostics) => {
-        if (diagnostics?.headMotion > headMotionThreshold) {
-          updateStatus({ source: 'head movement detected · hold still', target: null, locked: false })
-          return
+        latestSample = {
+          point: prediction,
+          source: 'gaze',
+          headMotion: diagnostics?.headMotion,
+          trackedConfidence: diagnostics?.trackedConfidence,
         }
-        handlePoint(prediction, 'gaze')
       },
       (prediction, _elapsedTime, diagnostics) => {
         samplesSeen += 1
@@ -140,6 +206,7 @@ export default function GazeTrackingLayer({ children }) {
 
     return () => {
       mounted = false
+      if (animationFrame) window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('click', handleClick, true)
       stopWebGazer()
