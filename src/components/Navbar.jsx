@@ -8,8 +8,8 @@ export default function Navbar() {
       </nav>
       <input className="search" placeholder="Search…" data-component="SearchInput" />
       <div className="icon-row" data-component="IconRow">
-        {['★', '✉', '⚙', '?'].map((i) => (
-          <button key={i} className="icon-btn" aria-label={i}>{i}</button>
+        {['★', '✉', '⚙', '?'].map((i, index) => (
+          <button key={i} className="icon-btn" aria-label={i} data-component={`IconButton-${index + 1}`}>{i}</button>
         ))}
       </div>
       <div className="avatar" data-component="Avatar">AB</div>
