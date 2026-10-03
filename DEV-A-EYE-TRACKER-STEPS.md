@@ -193,6 +193,9 @@ The same sensitivity setting controls the adaptive radius (90–160 px by
 default) so smoothing and spatial forgiveness remain one user-facing knob.
 The same sensitivity object may also provide `dwellMs` (default `500`) so the
 lock threshold can be tuned without changing the tracking wrapper.
+The adaptive-orb wrapper keeps rendering at display rate but throttles DOM
+selection to 24 Hz and requires two consecutive wins before switching targets;
+clicks bypass that hysteresis.
 
 ### 11. Add snapping
 

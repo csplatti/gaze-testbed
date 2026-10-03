@@ -3,6 +3,7 @@ import Calibration from './Calibration.jsx'
 import { startWebGazer, stopWebGazer } from './webgazer.js'
 import { createEmaSmoother } from './smoothing.js'
 import { createDwellTracker } from './dwell.js'
+import { createTargetStabilizer } from './stabilizer.js'
 import { probeArea } from './probe.js'
 import { createGazeFrame } from './frame.js'
 import {
@@ -46,6 +47,11 @@ export default function GazeTrackingLayer({
     const initialSensitivity = normalizeSensitivity(sensitivityRef.current)
     const smoother = createEmaSmoother(initialSensitivity.smoothing)
     const dwell = createDwellTracker(initialSensitivity.dwellMs)
+    const targetStabilizer = createTargetStabilizer(2)
+    const selectionIntervalMs = 1000 / 24
+    let lastSelectionAt = Number.NEGATIVE_INFINITY
+    let lastCandidates = []
+    let stableTarget = null
 
     ensureOverlay()
     updateStatus({ source: 'starting camera', target: null, locked: false })
@@ -100,20 +106,26 @@ export default function GazeTrackingLayer({
         opacity: opacityForConfidence(trackedConfidence),
       })
 
-      const area = probeArea(smoothed.x, smoothed.y, radiusPx)
-      const target = area.primary
-      const dwellState = dwell.update(target, performance.now())
-      if (dwellState.changed) lockedTarget.current = null
+      const now = performance.now()
+      if (now - lastSelectionAt >= selectionIntervalMs) {
+        lastSelectionAt = now
+        const area = probeArea(smoothed.x, smoothed.y, radiusPx)
+        lastCandidates = area.candidates
+        const stabilized = targetStabilizer.update(area.primary, area.candidates)
+        stableTarget = stabilized.target
+        const dwellState = dwell.update(stableTarget, now)
+        if (stabilized.changed) lockedTarget.current = null
 
-      const isLocked = lockedTarget.current?.element === target?.element
-      updateHighlights(area.candidates, isLocked ? lockedTarget.current : null, target)
-      updateStatus({ source: sample.source, target, candidates: area.candidates, locked: isLocked })
+        const isLocked = lockedTarget.current?.element === stableTarget?.element
+        updateHighlights(lastCandidates, isLocked ? lockedTarget.current : null, stableTarget)
+        updateStatus({ source: sample.source, target: stableTarget, candidates: lastCandidates, locked: isLocked })
 
-      if (dwellState.lockedTarget && !isLocked) {
-        lock(dwellState.lockedTarget, 'dwell', area.candidates)
+        if (dwellState.lockedTarget && !isLocked) {
+          lock(dwellState.lockedTarget, 'dwell', lastCandidates)
+        }
       }
 
-      emitFrame(area.candidates, {
+      emitFrame(lastCandidates, {
         x: sample.point.x,
         y: sample.point.y,
         smoothedX: smoothed.x,
@@ -133,10 +145,17 @@ export default function GazeTrackingLayer({
 
     const handleClick = (event) => {
       const area = probeArea(event.clientX, event.clientY, 0)
-      const target = area.primary
-      if (target) lock(dwell.click(target), 'click', area.candidates)
+      lastCandidates = area.candidates
+      stableTarget = targetStabilizer.click(area.primary)
+      if (stableTarget) {
+        lock(dwell.click(stableTarget), 'click', lastCandidates)
+      } else {
+        lockedTarget.current = null
+        dwell.reset()
+      }
+      updateHighlights(lastCandidates, stableTarget, stableTarget)
 
-      emitFrame(area.candidates, {
+      emitFrame(lastCandidates, {
         x: event.clientX,
         y: event.clientY,
         smoothedX: event.clientX,

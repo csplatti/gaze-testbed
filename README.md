@@ -20,7 +20,9 @@ WebGazer:
 ```
 
 The callback is local renderer data; candidate frames remain bounded at five
-items and radius-zero queries are reserved for click overrides.
+items and radius-zero queries are reserved for click overrides. The orb stays
+smooth at display rate while target selection is intentionally throttled and
+requires two consecutive wins before switching.
 
 ```
 npm install

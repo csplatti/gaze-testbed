@@ -58,6 +58,10 @@ production `mhacks` contracts:
 - The wrapper accepts the contract-shaped sensitivity settings `{ dwellMs,
   smoothing }` and updates both live; the testbed also accepts the orb radius
   bounds as local renderer configuration.
+- The orb/frame stream remains display-rate driven, while DOM probing, target
+  switching, and dwell updates are throttled to 24 Hz. A target must win two
+  consecutive selection updates before replacing the current target; click
+  overrides bypass that gate.
 - The orb radius adapts from 90 px at high tracked confidence to 160 px at low
   confidence. Its opacity also reflects tracked confidence.
 - Area queries accept an optional radius. Radius-zero queries are exact click
