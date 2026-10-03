@@ -3,6 +3,7 @@ import Calibration from './Calibration.jsx'
 import { startWebGazer, stopWebGazer } from './webgazer.js'
 import { createEmaSmoother } from './smoothing.js'
 import { probeArea } from './probe.js'
+import { createGazeFrame } from './frame.js'
 import {
   ensureOverlay,
   removeOverlay,
@@ -39,6 +40,15 @@ export default function GazeTrackingLayer({ children }) {
       })
     }
 
+    const emitFrame = (candidates) => {
+      const frame = createGazeFrame({
+        candidates,
+        lockedTarget: lockedTarget.current,
+      })
+      console.log('[Gaze Testbed] GazeFrame', JSON.stringify(frame))
+      return frame
+    }
+
     const handlePoint = (point, source) => {
       if (!mounted) return
 
@@ -61,6 +71,8 @@ export default function GazeTrackingLayer({ children }) {
       if (target && performance.now() - enteredAt >= dwellMs) {
         lock(target, 'dwell', area.candidates)
       }
+
+      emitFrame(area.candidates)
     }
 
     const handleMouseMove = (event) => {
@@ -74,6 +86,7 @@ export default function GazeTrackingLayer({ children }) {
         currentTarget = target
         lock(target, 'click', area.candidates)
       }
+      emitFrame(area.candidates)
     }
 
     window.addEventListener('mousemove', handleMouseMove)

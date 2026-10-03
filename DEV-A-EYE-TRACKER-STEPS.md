@@ -71,6 +71,7 @@ src/gaze/
 ├── webgazer.js
 ├── smoothing.js
 ├── probe.js
+├── frame.js
 └── overlay.js
 ```
 
@@ -238,6 +239,10 @@ main repository contract:
 
 For this temporary experiment, `filePath` may be `null` and `supportedOps`
 may be an empty array. Source mapping and edit catalogs come later.
+
+Log each created frame as `JSON.stringify(frame)` while validating the
+handoff. The console output should contain no DOM nodes, `DOMRect` objects,
+functions, or other browser-only values.
 
 ### 15. Preserve the wrapper boundary for the eventual webpage viewer
 

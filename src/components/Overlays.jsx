@@ -19,7 +19,7 @@ export default function Overlays() {
           <div className="modal" data-component="Modal" onClick={(e) => e.stopPropagation()}>
             <h3>Modal dialog</h3>
             <p>Gaze should target the modal, not the page behind the scrim.</p>
-            <button className="btn primary" onClick={() => setModal(false)}>Close</button>
+        <button className="btn primary" data-component="CloseModalButton" onClick={() => setModal(false)}>Close</button>
           </div>
         </div>
       )}
