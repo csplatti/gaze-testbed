@@ -1,7 +1,7 @@
 export const DEFAULT_HEAD_TRACKING = Object.freeze({
   deadzone: 0,
   verticalGain: 3,
-  horizontalGain: 3,
+  horizontalGain: 2.5,
   invertX: true,
 })
 
