@@ -12,7 +12,7 @@ const NAV = ['Overview', 'Cards', 'Dense controls', 'Form', 'Data', 'Overlays']
 
 export default function App() {
   return (
-    <GazeTrackingLayer>
+    <GazeTrackingLayer trackingMode="head">
       <div className="app" data-component="App">
         <Navbar />
         <div className="layout">

@@ -74,6 +74,35 @@ The renderer loop is intentionally separate from the query/decision path. A
 future PM integration can consume the frame stream locally while Dev B receives
 only the bounded candidate set and lock events needed for decisions.
 
+## Head-pointer mode
+
+The demo now defaults to `trackingMode="head"` because webcam eye-to-screen
+regression was not reliable enough for precise selection. WebGazer's face mesh
+is still used as the camera adapter, but the tracker reduces the landmarks to a
+normalized face-box center and maps displacement from a stable neutral anchor.
+Brief face-detector dropouts preserve that anchor instead of restarting the
+mapping. Head mode also disables WebGazer's gaze-regression callback and mesh
+overlay, so only face position drives the cursor.
+
+- `headCursor.js` applies configurable deadzone, verticalGain, horizontalGain,
+  horizontal mirroring,
+  viewport clamping, and the existing sensitivity-controlled EMA. The current
+  default is a 0% deadzone with 8x vertical gain and a 5x horizontal
+  multiplier for a substantially more responsive cursor, especially left to
+  right.
+- The head anchor uses the central nose landmark rather than eye landmarks;
+  the face-box center is only a fallback when that landmark is unavailable.
+- Head movement enters the same adaptive orb, five-candidate spatial probe,
+  hysteresis, dwell lock, and JSON-safe `GazeFrame` path. The page remains
+  unaware of WebGazer.
+- Press `R` to recenter after changing posture or camera placement. Enter,
+  Space, or a mouse click confirms the currently highlighted component.
+- `trackingMode="gaze"` retains the earlier multi-point calibrated eye
+  prediction path for comparison.
+
+This is still a webcam prototype: the head cursor should be evaluated for
+coarse navigation and component selection, not treated as a precision mouse.
+
 ## Manual webcam observations
 
 The live Chrome run confirmed that the face mesh, calibration overlay, raw and

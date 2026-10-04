@@ -4,6 +4,7 @@ import { startWebGazer, stopWebGazer } from './webgazer.js'
 import { createEmaSmoother } from './smoothing.js'
 import { createDwellTracker } from './dwell.js'
 import { createTargetStabilizer } from './stabilizer.js'
+import { createHeadCursor, DEFAULT_HEAD_TRACKING } from './headCursor.js'
 import { probeArea } from './probe.js'
 import { createGazeFrame } from './frame.js'
 import {
@@ -25,15 +26,21 @@ import {
 export default function GazeTrackingLayer({
   children,
   sensitivity = DEFAULT_SENSITIVITY,
+  trackingMode = 'head',
+  headTracking = DEFAULT_HEAD_TRACKING,
   listening = false,
   onGazeFrame,
 }) {
   const lockedTarget = useRef(null)
   const sensitivityRef = useRef(sensitivity)
+  const trackingModeRef = useRef(trackingMode)
+  const headTrackingRef = useRef(headTracking)
   const listeningRef = useRef(listening)
   const frameCallbackRef = useRef(onGazeFrame)
 
   sensitivityRef.current = sensitivity
+  trackingModeRef.current = trackingMode
+  headTrackingRef.current = headTracking
   listeningRef.current = listening
   frameCallbackRef.current = onGazeFrame
 
@@ -46,15 +53,21 @@ export default function GazeTrackingLayer({
     const headMotionThreshold = 8
     const initialSensitivity = normalizeSensitivity(sensitivityRef.current)
     const smoother = createEmaSmoother(initialSensitivity.smoothing)
+    const headCursor = createHeadCursor(headTrackingRef.current)
     const dwell = createDwellTracker(initialSensitivity.dwellMs)
     const targetStabilizer = createTargetStabilizer(2)
     const selectionIntervalMs = 1000 / 24
     let lastSelectionAt = Number.NEGATIVE_INFINITY
     let lastCandidates = []
     let stableTarget = null
+    let latestCursor = null
 
     ensureOverlay()
-    updateStatus({ source: 'starting camera', target: null, locked: false })
+    updateStatus({
+      source: trackingModeRef.current === 'head' ? 'starting head tracking' : 'starting camera',
+      target: null,
+      locked: false,
+    })
 
     const lock = (target, source, candidates = [target]) => {
       if (!target) return
@@ -82,29 +95,44 @@ export default function GazeTrackingLayer({
     const processSample = (sample) => {
       if (!mounted || !sample || listeningRef.current) return
 
-      if (sample.headMotion > headMotionThreshold) {
+      const activeMode = trackingModeRef.current
+      if (activeMode === 'gaze' && sample.headMotion > headMotionThreshold) {
         updateStatus({ source: 'head movement detected · hold still', target: null, locked: false })
         return
       }
 
       const currentSensitivity = normalizeSensitivity(sensitivityRef.current)
       smoother.setAlpha(currentSensitivity.smoothing)
+      headCursor.setSmoothing(currentSensitivity.smoothing)
       dwell.setThreshold(currentSensitivity.dwellMs)
-      const smoothed = smoother.update(sample.point)
-      if (!smoothed) return
+      let rawPoint = sample.point
+      let smoothed = null
+      if (activeMode === 'head') {
+        const cursor = headCursor.map(sample.headPose, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        })
+        if (!cursor) return
+        rawPoint = cursor.rawPoint
+        smoothed = cursor.point
+      } else {
+        smoothed = smoother.update(sample.point)
+        if (!smoothed) return
+      }
 
       const trackedConfidence = Number.isFinite(sample.trackedConfidence)
         ? sample.trackedConfidence
         : 0.5
       const radiusPx = radiusForConfidence(trackedConfidence, currentSensitivity)
 
-      updateRawPoint(sample.point)
+      updateRawPoint(rawPoint)
       updateSmoothedPoint(smoothed)
       updateGazeOrb({
         point: smoothed,
         radiusPx,
         opacity: opacityForConfidence(trackedConfidence),
       })
+      latestCursor = { rawPoint, point: smoothed, radiusPx, trackedConfidence }
 
       const now = performance.now()
       if (now - lastSelectionAt >= selectionIntervalMs) {
@@ -126,8 +154,8 @@ export default function GazeTrackingLayer({
       }
 
       emitFrame(lastCandidates, {
-        x: sample.point.x,
-        y: sample.point.y,
+        x: rawPoint.x,
+        y: rawPoint.y,
         smoothedX: smoothed.x,
         smoothedY: smoothed.y,
         radiusPx,
@@ -135,6 +163,7 @@ export default function GazeTrackingLayer({
     }
 
     const handleMouseMove = (event) => {
+      if (trackingModeRef.current !== 'gaze') return
       latestSample = {
         point: { x: event.clientX, y: event.clientY },
         source: 'mouse',
@@ -144,6 +173,11 @@ export default function GazeTrackingLayer({
     }
 
     const handleClick = (event) => {
+      if (trackingModeRef.current === 'head') {
+        activateCurrentTarget('click')
+        return
+      }
+
       const area = probeArea(event.clientX, event.clientY, 0)
       lastCandidates = area.candidates
       stableTarget = targetStabilizer.click(area.primary)
@@ -164,6 +198,46 @@ export default function GazeTrackingLayer({
       }, 1)
     }
 
+    const activateCurrentTarget = (source) => {
+      if (!stableTarget) return
+      lock(dwell.click(stableTarget), source, lastCandidates)
+      if (!latestCursor) return
+      emitFrame(lastCandidates, {
+        x: latestCursor.rawPoint.x,
+        y: latestCursor.rawPoint.y,
+        smoothedX: latestCursor.point.x,
+        smoothedY: latestCursor.point.y,
+        radiusPx: latestCursor.radiusPx,
+      }, latestCursor.trackedConfidence)
+    }
+
+    const handleKeyDown = (event) => {
+      if (trackingModeRef.current === 'head' && event.key.toLowerCase() === 'r') {
+        const anchor = latestSample?.headPose
+        const centered = headCursor.recenter(anchor, {
+          width: window.innerWidth,
+          height: window.innerHeight,
+        })
+        if (!centered) {
+          updateStatus({ source: 'head tracking · no face to recenter', target: stableTarget, candidates: lastCandidates, locked: false })
+          return
+        }
+        stableTarget = null
+        lockedTarget.current = null
+        targetStabilizer.reset()
+        dwell.reset()
+        latestCursor = null
+        updateHighlights([], null, null)
+        updateStatus({ source: 'head tracking · recentered', target: null, locked: false })
+        return
+      }
+
+      if (trackingModeRef.current === 'head' && (event.key === 'Enter' || event.key === ' ')) {
+        event.preventDefault()
+        activateCurrentTarget('keyboard')
+      }
+    }
+
     const renderLatestSample = () => {
       if (!mounted) return
       processSample(latestSample)
@@ -172,19 +246,50 @@ export default function GazeTrackingLayer({
 
     window.addEventListener('mousemove', handleMouseMove)
     window.addEventListener('click', handleClick, true)
+    window.addEventListener('keydown', handleKeyDown)
     animationFrame = window.requestAnimationFrame(renderLatestSample)
 
     startWebGazer(
       (prediction, _elapsedTime, diagnostics) => {
-        latestSample = {
-          point: prediction,
-          source: 'gaze',
-          headMotion: diagnostics?.headMotion,
-          trackedConfidence: diagnostics?.trackedConfidence,
+        if (trackingModeRef.current === 'gaze') {
+          latestSample = {
+            point: prediction,
+            source: 'gaze',
+            headPose: diagnostics?.headPose,
+            headMotion: diagnostics?.headMotion,
+            trackedConfidence: diagnostics?.trackedConfidence,
+          }
         }
       },
       (prediction, _elapsedTime, diagnostics) => {
         samplesSeen += 1
+        if (trackingModeRef.current === 'head') {
+          latestSample = {
+            point: null,
+            source: 'head',
+            headPose: diagnostics?.headPose,
+            headMotion: diagnostics?.headMotion,
+            trackedConfidence: diagnostics?.headPose ? 1 : 0,
+          }
+          if (diagnostics?.headPose) {
+            predictionsSeen += 1
+            if (predictionsSeen === 1 || predictionsSeen % 30 === 0) {
+              updateStatus({
+                source: `head tracking active (${predictionsSeen} face samples) · press R to recenter`,
+                target: null,
+                locked: false,
+              })
+            }
+          } else if (samplesSeen % 30 === 0) {
+            updateStatus({
+              source: `camera ready · no face detected (${samplesSeen} samples)`,
+              target: null,
+              locked: false,
+            })
+          }
+          return
+        }
+
         if (diagnostics?.headMotion > headMotionThreshold) {
           updateStatus({ source: 'head movement detected · hold still', target: null, locked: false })
           return
@@ -206,9 +311,13 @@ export default function GazeTrackingLayer({
           })
         }
       },
+      {
+        disableMouseLearning: trackingModeRef.current === 'head',
+        headOnly: trackingModeRef.current === 'head',
+      },
     )
       .then(() => {
-        if (mounted && predictionsSeen === 0) {
+        if (mounted && trackingModeRef.current === 'gaze' && predictionsSeen === 0) {
           updateStatus({ source: 'camera ready · no predictions yet', target: null, locked: false })
         }
       })
@@ -228,6 +337,7 @@ export default function GazeTrackingLayer({
       if (animationFrame) window.cancelAnimationFrame(animationFrame)
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('click', handleClick, true)
+      window.removeEventListener('keydown', handleKeyDown)
       stopWebGazer()
       removeOverlay()
     }
@@ -235,7 +345,7 @@ export default function GazeTrackingLayer({
 
   return (
     <>
-      <Calibration />
+      {trackingMode === 'gaze' ? <Calibration /> : null}
       {children}
     </>
   )

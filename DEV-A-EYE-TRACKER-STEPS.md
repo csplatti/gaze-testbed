@@ -69,6 +69,7 @@ Create:
 src/gaze/
 ├── GazeTrackingLayer.jsx
 ├── webgazer.js
+├── headCursor.js
 ├── smoothing.js
 ├── probe.js
 ├── frame.js
@@ -88,10 +89,10 @@ should mount its page through a reusable wrapper:
 </GazeTrackingLayer>
 ```
 
-`GazeTrackingLayer` owns the sandbox's WebGazer lifecycle, smoothing, dwell
-locking, click fallback, and calls to the probe. Keep the temporary debug
-overlay behind that boundary. The page components should not import WebGazer
-or know how gaze coordinates are produced.
+`GazeTrackingLayer` owns the sandbox's WebGazer lifecycle, head/gaze mapping,
+smoothing, dwell locking, click/keyboard activation, and calls to the probe.
+Keep the temporary debug overlay behind that boundary. The page components
+should not import WebGazer or know how coordinates are produced.
 
 Inside that wrapper or its controller:
 
@@ -121,6 +122,12 @@ The green face box confirms face detection; it does not by itself mean that a
 screen-coordinate prediction is available. Keep this calibration step
 sandbox-only for now. The production `mhacks` version will report its
 calibration state through the gaze contract.
+
+The default testbed mode is now head tracking, which does not need the
+screen-point regression calibration. The first stable face position becomes the
+neutral head position, then movement maps to a viewport-local cursor. Press `R`
+to recenter after changing posture or camera placement. Use
+`trackingMode="gaze"` when testing the calibrated eye-prediction path above.
 
 ### 6. Add a debug gaze dot
 
@@ -196,6 +203,20 @@ lock threshold can be tuned without changing the tracking wrapper.
 The adaptive-orb wrapper keeps rendering at display rate but throttles DOM
 selection to 24 Hz and requires two consecutive wins before switching targets;
 clicks bypass that hysteresis.
+
+### 10a. Head-pointer mode
+
+Head mode reduces the face mesh to a normalized face-box center, rather than
+using the noisy eye-to-screen regression. `headCursor.js` maps displacement
+from a stable neutral anchor, applying a deadzone, verticalGain, horizontalGain,
+horizontal camera mirroring, and the same sensitivity-controlled EMA. Brief
+face-detector dropouts preserve the anchor. The resulting screen point enters
+the existing orb, nearby-component query, dwell, lock, and `GazeFrame` path.
+Enter/Space or a mouse click confirms the current highlighted target; `R`
+recenters the neutral head position.
+
+The runtime prefers the central nose landmark as the head anchor so eye and
+eyelid movement does not directly drive the cursor.
 
 ### 11. Add snapping
 

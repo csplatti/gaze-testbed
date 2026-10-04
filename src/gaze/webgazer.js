@@ -12,25 +12,61 @@ function readTrackedConfidence(data, headMotion) {
   return clamp(1 - headMotion / 24, 0, 1)
 }
 
-function readHeadMotion() {
+function readHeadTracking() {
   const positions = webgazer.getTracker?.().getPositions?.()
-  const anchor = positions?.[1]
-  if (!anchor) {
+  if (!Array.isArray(positions) || positions.length === 0) {
     previousFaceAnchor = null
-    return null
+    return { headPose: null, headMotion: null }
   }
 
+  const validPositions = positions.filter((position) => (
+    Array.isArray(position)
+      && Number.isFinite(position[0])
+      && Number.isFinite(position[1])
+  ))
+  if (validPositions.length === 0) {
+    previousFaceAnchor = null
+    return { headPose: null, headMotion: null }
+  }
+
+  const minX = Math.min(...validPositions.map((position) => position[0]))
+  const maxX = Math.max(...validPositions.map((position) => position[0]))
+  const minY = Math.min(...validPositions.map((position) => position[1]))
+  const maxY = Math.max(...validPositions.map((position) => position[1]))
+  const canvas = webgazer.getVideoElementCanvas?.()
+  const videoWidth = canvas?.width || 640
+  const videoHeight = canvas?.height || 480
+  // Landmark 1 is the nose tip in MediaPipe FaceMesh. It is a more stable
+  // head-motion anchor than the full face box, whose edges can move slightly
+  // when the eyes or eyelids move. Fall back to the box center if unavailable.
+  const nose = validPositions[1] ?? [
+    (minX + maxX) / 2,
+    (minY + maxY) / 2,
+  ]
+  const anchor = {
+    x: clamp(nose[0] / videoWidth, 0, 1),
+    y: clamp(nose[1] / videoHeight, 0, 1),
+    faceWidth: clamp((maxX - minX) / videoWidth, 0, 1),
+    faceHeight: clamp((maxY - minY) / videoHeight, 0, 1),
+  }
   const motion = previousFaceAnchor
-    ? Math.hypot(anchor[0] - previousFaceAnchor[0], anchor[1] - previousFaceAnchor[1])
+    ? Math.hypot(
+        (anchor.x - previousFaceAnchor.x) * videoWidth,
+        (anchor.y - previousFaceAnchor.y) * videoHeight,
+      )
     : null
-  previousFaceAnchor = { x: anchor[0], y: anchor[1] }
-  return motion
+  previousFaceAnchor = anchor
+  return { headPose: anchor, headMotion: motion }
 }
 
 // Keep WebGazer lifecycle and its browser-specific setup in one place. The
 // sample callback is useful while diagnosing camera/face-model startup: the
 // library can call its listener with null before it sees a face.
-export function startWebGazer(onGaze, onSample) {
+export function startWebGazer(
+  onGaze,
+  onSample,
+  { disableMouseLearning = false, headOnly = false } = {},
+) {
   previousFaceAnchor = null
   // WebGazer's package does not make these MediaPipe assets available through
   // Vite automatically. They are copied into public/mediapipe/face_mesh so
@@ -50,23 +86,31 @@ export function startWebGazer(onGaze, onSample) {
   webgazer
     .showVideoPreview(true)
     .showVideo(true)
-    .showFaceOverlay(true)
+    // The face mesh is useful while debugging gaze, but its eye landmarks can
+    // make head mode look like eye tracking. Head mode still uses the detector;
+    // it simply does not render or consume the gaze-regression path.
+    .showFaceOverlay(!headOnly)
     .showFaceFeedbackBox(true)
     // Use the sandbox's raw/smoothed dots instead of WebGazer's separate dot;
     // the latter can remain at its last rendered position during calibration.
     .showPredictionPoints(false)
     .setGazeListener((data, elapsedTime) => {
-      const headMotion = readHeadMotion()
+      const { headPose, headMotion } = readHeadTracking()
       const trackedConfidence = readTrackedConfidence(data, headMotion)
-      onSample?.(data, elapsedTime, { headMotion, trackedConfidence })
+      onSample?.(data, elapsedTime, { headPose, headMotion, trackedConfidence })
+      if (headOnly) return
       if (!data || !Number.isFinite(data.x) || !Number.isFinite(data.y)) return
 
       const prediction = { x: data.x, y: data.y }
       console.log('[WebGazer] gaze prediction', { ...prediction, elapsedTime })
-      onGaze?.(prediction, elapsedTime, { headMotion, trackedConfidence })
+      onGaze?.(prediction, elapsedTime, { headPose, headMotion, trackedConfidence })
     })
 
-  return webgazer.begin()
+  const started = webgazer.begin()
+  if (disableMouseLearning) {
+    started.then(() => webgazer.removeMouseEventListeners())
+  }
+  return started
 }
 
 export function recordCalibrationPoint(x, y) {

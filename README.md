@@ -1,6 +1,6 @@
 # Gaze Testbed
 
-Dummy React app for testing the gaze + voice dev tool. No backend.
+Dummy React app for testing the head-pointer/gaze + voice dev tool. No backend.
 
 The current verification record is in
 [`DEV-A-TESTBED-REPORT.md`](./DEV-A-TESTBED-REPORT.md). The reusable tracker
@@ -8,16 +8,28 @@ boundary lives in `src/gaze/`; it can wrap this demo page now and a future
 webpage viewer later.
 
 The wrapper accepts the future renderer seam without coupling the page to
-WebGazer:
+WebGazer. The demo currently uses head tracking:
 
 ```jsx
 <GazeTrackingLayer
+  trackingMode="head"
+  headTracking={{ deadzone: 0, verticalGain: 8, horizontalGain: 5, invertX: true }}
   sensitivity={{ dwellMs: 500, smoothing: 0.25, minRadiusPx: 90, maxRadiusPx: 160 }}
   onGazeFrame={(frame) => pmOverlay.render(frame.gaze)}
 >
   <WebpageViewer />
 </GazeTrackingLayer>
 ```
+
+The first detected face position becomes neutral; head displacement from that
+position maps to a screen-local cursor with EMA smoothing. Brief face-detector
+dropouts preserve the same neutral calibration. Press `R` to recenter, and
+press Enter/Space (or click) to lock the currently highlighted component. Set
+`trackingMode="gaze"` to use the original calibrated eye-prediction path
+instead.
+
+In head mode, the gaze-regression callback and WebGazer face-mesh overlay are
+disabled; only the face-position detector drives the cursor.
 
 The callback is local renderer data; candidate frames remain bounded at five
 items and radius-zero queries are reserved for click overrides. The orb stays
