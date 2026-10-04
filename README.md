@@ -7,8 +7,8 @@ The current verification record is in
 boundary lives in `src/gaze/`; it can wrap this demo page now and a future
 webpage viewer later.
 
-The wrapper accepts the future renderer seam without coupling the page to
-WebGazer. The demo currently uses head tracking:
+The wrapper accepts the future renderer seam without coupling the page to the
+camera tracker. The demo currently uses direct MediaPipe head tracking:
 
 ```jsx
 <GazeTrackingLayer
@@ -28,8 +28,9 @@ press Enter/Space (or click) to lock the currently highlighted component. Set
 `trackingMode="gaze"` to use the original calibrated eye-prediction path
 instead.
 
-In head mode, the gaze-regression callback and WebGazer face-mesh overlay are
-disabled; only the face-position detector drives the cursor.
+In head mode, `@mediapipe/tasks-vision` owns the camera and face-landmark
+stream; WebGazer is not started. WebGazer remains available only when using
+`trackingMode="gaze"` for comparison.
 
 The callback is local renderer data; candidate frames remain bounded at five
 items and radius-zero queries are reserved for click overrides. The orb stays

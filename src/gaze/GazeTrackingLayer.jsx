@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react'
 import Calibration from './Calibration.jsx'
 import { startWebGazer, stopWebGazer } from './webgazer.js'
+import { startHeadTracking } from './headLandmarker.js'
 import { createEmaSmoother } from './smoothing.js'
 import { createDwellTracker } from './dwell.js'
 import { createTargetStabilizer } from './stabilizer.js'
@@ -249,9 +250,53 @@ export default function GazeTrackingLayer({
     window.addEventListener('keydown', handleKeyDown)
     animationFrame = window.requestAnimationFrame(renderLatestSample)
 
-    startWebGazer(
-      (prediction, _elapsedTime, diagnostics) => {
-        if (trackingModeRef.current === 'gaze') {
+    let headTracker = null
+    if (trackingModeRef.current === 'head') {
+      headTracker = startHeadTracking((headPose, diagnostics) => {
+        samplesSeen += 1
+        latestSample = {
+          point: null,
+          source: 'head',
+          headPose,
+          headMotion: null,
+          trackedConfidence: diagnostics?.trackedConfidence ?? (headPose ? 1 : 0),
+        }
+        if (headPose) {
+          predictionsSeen += 1
+          if (predictionsSeen === 1 || predictionsSeen % 30 === 0) {
+            updateStatus({
+              source: `head tracking active (${predictionsSeen} face samples) · press R to recenter`,
+              target: null,
+              locked: false,
+            })
+          }
+        } else if (samplesSeen % 30 === 0) {
+          updateStatus({
+            source: `camera ready · no face detected (${samplesSeen} samples)`,
+            target: null,
+            locked: false,
+          })
+        }
+      })
+      headTracker.ready
+        .then(() => {
+          if (mounted) {
+            updateStatus({ source: 'head camera ready · look at the camera', target: null, locked: false })
+          }
+        })
+        .catch((error) => {
+          console.error('[Gaze Testbed] Face Landmarker could not start', error)
+          if (mounted) {
+            updateStatus({
+              source: `camera error: ${error?.name ?? 'unknown'}`,
+              target: null,
+              locked: false,
+            })
+          }
+        })
+    } else {
+      startWebGazer(
+        (prediction, _elapsedTime, diagnostics) => {
           latestSample = {
             point: prediction,
             source: 'gaze',
@@ -259,78 +304,47 @@ export default function GazeTrackingLayer({
             headMotion: diagnostics?.headMotion,
             trackedConfidence: diagnostics?.trackedConfidence,
           }
-        }
-      },
-      (prediction, _elapsedTime, diagnostics) => {
-        samplesSeen += 1
-        if (trackingModeRef.current === 'head') {
-          latestSample = {
-            point: null,
-            source: 'head',
-            headPose: diagnostics?.headPose,
-            headMotion: diagnostics?.headMotion,
-            trackedConfidence: diagnostics?.headPose ? 1 : 0,
+        },
+        (prediction, _elapsedTime, diagnostics) => {
+          samplesSeen += 1
+          if (diagnostics?.headMotion > headMotionThreshold) {
+            updateStatus({ source: 'head movement detected · hold still', target: null, locked: false })
+            return
           }
-          if (diagnostics?.headPose) {
+          if (prediction && Number.isFinite(prediction.x) && Number.isFinite(prediction.y)) {
             predictionsSeen += 1
             if (predictionsSeen === 1 || predictionsSeen % 30 === 0) {
               updateStatus({
-                source: `head tracking active (${predictionsSeen} face samples) · press R to recenter`,
+                source: `gaze active (${predictionsSeen} predictions)`,
                 target: null,
                 locked: false,
               })
             }
           } else if (samplesSeen % 30 === 0) {
             updateStatus({
-              source: `camera ready · no face detected (${samplesSeen} samples)`,
+              source: `camera ready · no face prediction (${samplesSeen} samples)`,
               target: null,
               locked: false,
             })
           }
-          return
-        }
-
-        if (diagnostics?.headMotion > headMotionThreshold) {
-          updateStatus({ source: 'head movement detected · hold still', target: null, locked: false })
-          return
-        }
-        if (prediction && Number.isFinite(prediction.x) && Number.isFinite(prediction.y)) {
-          predictionsSeen += 1
-          if (predictionsSeen === 1 || predictionsSeen % 30 === 0) {
+        },
+      )
+        .then(() => {
+          if (mounted && predictionsSeen === 0) {
+            updateStatus({ source: 'camera ready · no predictions yet', target: null, locked: false })
+          }
+        })
+        .catch((error) => {
+          console.error('[Gaze Testbed] WebGazer could not start', error)
+          if (mounted) {
             updateStatus({
-              source: `gaze active (${predictionsSeen} predictions)`,
+              source: `camera error: ${error?.name ?? 'unknown'}`,
               target: null,
               locked: false,
             })
           }
-        } else if (samplesSeen % 30 === 0) {
-          updateStatus({
-            source: `camera ready · no face prediction (${samplesSeen} samples)`,
-            target: null,
-            locked: false,
-          })
-        }
-      },
-      {
-        disableMouseLearning: trackingModeRef.current === 'head',
-        headOnly: trackingModeRef.current === 'head',
-      },
-    )
-      .then(() => {
-        if (mounted && trackingModeRef.current === 'gaze' && predictionsSeen === 0) {
-          updateStatus({ source: 'camera ready · no predictions yet', target: null, locked: false })
-        }
-      })
-      .catch((error) => {
-        console.error('[Gaze Testbed] WebGazer could not start', error)
-        if (mounted) {
-          updateStatus({
-            source: `camera error: ${error?.name ?? 'unknown'}`,
-            target: null,
-            locked: false,
-          })
-        }
-      })
+        })
+    }
 
     return () => {
       mounted = false
@@ -338,7 +352,8 @@ export default function GazeTrackingLayer({
       window.removeEventListener('mousemove', handleMouseMove)
       window.removeEventListener('click', handleClick, true)
       window.removeEventListener('keydown', handleKeyDown)
-      stopWebGazer()
+      headTracker?.stop()
+      if (trackingModeRef.current === 'gaze') stopWebGazer()
       removeOverlay()
     }
   }, [])

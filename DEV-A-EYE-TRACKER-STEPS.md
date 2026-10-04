@@ -45,21 +45,22 @@ npm run dev
 
 Open the local Vite URL, normally `http://localhost:5173`.
 
-### 3. Install WebGazer
+### 3. Install the tracking packages
 
 ```bash
-npm install webgazer
+npm install @mediapipe/tasks-vision webgazer
 ```
 
-WebGazer can be imported with:
+The default head mode imports MediaPipe Face Landmarker directly:
 
 ```js
-import webgazer from "webgazer";
+import { FaceLandmarker, FilesetResolver } from "@mediapipe/tasks-vision";
 ```
 
-For this experiment, keep the WebGazer dependency isolated to the testbed.
-Before distributing the final app, review WebGazer's GPLv3 licensing with the
-team.
+Keep WebGazer isolated to the explicit `trackingMode="gaze"` comparison path.
+The default head mode uses the MediaPipe task's camera stream, normalized face
+landmarks, and neutral-pose mapping. Before distributing the final app, review
+the selected package licenses with the team.
 
 ### 4. Add a gaze experiment folder
 
@@ -68,6 +69,7 @@ Create:
 ```text
 src/gaze/
 ├── GazeTrackingLayer.jsx
+├── headLandmarker.js
 ├── webgazer.js
 ├── headCursor.js
 ├── smoothing.js
@@ -78,7 +80,7 @@ src/gaze/
 
 Keep these modules independent from the main `mhacks` source tree.
 
-### 5. Start WebGazer
+### 5. Start the tracker
 
 Create the tracking boundary before wiring the page behavior. The testbed
 should mount its page through a reusable wrapper:
@@ -89,17 +91,20 @@ should mount its page through a reusable wrapper:
 </GazeTrackingLayer>
 ```
 
-`GazeTrackingLayer` owns the sandbox's WebGazer lifecycle, head/gaze mapping,
-smoothing, dwell locking, click/keyboard activation, and calls to the probe.
+`GazeTrackingLayer` owns the sandbox's camera-tracker lifecycle, head/gaze
+mapping, smoothing, dwell locking, click/keyboard activation, and calls to the probe.
 Keep the temporary debug overlay behind that boundary. The page components
 should not import WebGazer or know how coordinates are produced.
 
-Inside that wrapper or its controller:
+Inside that wrapper or its controller, head mode:
 
-1. Call `webgazer.begin()`.
-2. Register `webgazer.setGazeListener(...)`.
-3. Log each predicted `{ x, y }` point.
-4. Pause WebGazer when the component unmounts.
+1. Create a `FaceLandmarker` in `VIDEO` mode.
+2. Read normalized face landmarks from `detectForVideo(...)`.
+3. Map a stable nose/head anchor to the viewport.
+4. Stop the camera stream and landmarker when the component unmounts.
+
+The legacy gaze comparison path still calls `webgazer.begin()` and registers
+`webgazer.setGazeListener(...)`.
 
 Initially, hide the camera preview and prediction dot if they distract from
 the test. Add a visible debug dot yourself so the raw gaze point is obvious.

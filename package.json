@@ -10,6 +10,7 @@
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
+    "@mediapipe/tasks-vision": "^1.0.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "webgazer": "^3.5.3"
